@@ -1,0 +1,75 @@
+
+
+
+include:
+  - project: 'im-sre/im-cicd'
+    ref: main
+    file: '/templates/global/.before-script-template.yml'
+  # - project: 'im-sre/im-cicd'
+  #   ref: main
+  #   file: '/templates/docker/docker-build.yaml'
+  # - project: 'im-sre/im-cicd'
+  #   ref: main
+  #   file: '/templates/aws/ecr/.ecr-push.yml'
+  - project: 'im-sre/im-cicd'
+    ref: main
+    file: '/templates/docker/.docker-remove-local.yml'
+
+
+variables:
+  DOCKER_TAGS: "latest"
+  DOCKER_TAG_NAME: 'cust_ubuntu'
+  IMAGE_NAME: "ubuntu"
+
+  ALPINE_DOCKER_TAG_NAME: 'latest'
+  ALPINE_IMAGE_NAME: "alpine"
+  RUNNER_TAGS: "ec2_shared"
+
+stages:
+    # - Build-image
+    # - Push-image
+    # - Remove-image
+    - Build-alpine-image
+    - Push-image
+    - Remove-image
+
+
+
+Alpine_DOCKER_BUILD:
+  stage: Build-alpine-image
+  tags:
+    - ${RUNNER_TAGS}
+  script:
+    - docker build  --no-cache
+      --build-arg EC2_KEY="${SSH_KEY}"
+      --build-arg KUBECTL_CONFIG="${KUBECTL_CONFIG}"
+      --build-arg AWS_DEFAULT_REGION="${ECR_REGION}"
+      --build-arg AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID}"
+      --build-arg AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY}"
+      --build-arg ECR_URL="${ECR_URL}"
+      --tag ${ALPINE_IMAGE_NAME}:${ALPINE_DOCKER_TAG_NAME} 
+      -f Dockerfile.alpine . || { echo "Docker build failed"; exit 1; }
+    - docker tag ${ALPINE_IMAGE_NAME}:${DOCKER_TAGS}  $ecr_url/${lowercase_prolect}:${ALPINE_IMAGE_NAME}.${DOCKER_TAGS}
+
+Push-image:
+  stage: Push-image
+  tags:
+    - ${RUNNER_TAGS}
+  script:
+    - aws ecr batch-delete-image --region  ${ECR_REGION}  --repository-name ${lowercase_prolect} --image-ids imageTag=${ALPINE_IMAGE_NAME}.${ALPINE_DOCKER_TAG_NAME}
+    - docker push $ECR_URL/${lowercase_prolect}:${ALPINE_IMAGE_NAME}.${ALPINE_DOCKER_TAG_NAME}
+
+
+Remove-image:
+  tags:
+    - ${RUNNER_TAGS}
+  stage: Remove-image
+  script:
+    - docker rmi -f $(docker images  | grep ${ALPINE_IMAGE_NAME} | awk '{print $3}')
+
+
+# docker-build:
+#   stage: build
+#   tags: ec2_shared
+#   scritp: 
+#     - !reference [.docker_build, script]
