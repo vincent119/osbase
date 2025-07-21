@@ -1,0 +1,73 @@
+ARG PAYTHON_VERSION=3.12.6
+ARG ALPINE_VERSION=3.20.3
+
+
+FROM loadimpact/k6:latest AS k6official
+
+#FROM python:${PAYTHON_VERSION}-alpine${ALPINE_VERSION} AS base
+FROM alpine:${ALPINE_VERSION} AS base
+
+ARG EC2_KEY
+ARG KUBECTL_CONFIG
+ARG ECR_URL
+ARG AWS_DEFAULT_REGION
+ARG AWS_ACCESS_KEY_ID
+ARG AWS_SECRET_ACCESS_KEY
+
+
+ENV TZ=Asia/Taipei
+ENV LC_ALL=C.UTF-8
+ENV LANG=C.UTF-8
+ENV PIP_ROOT_USER_ACTION=ignore
+
+RUN apk update \
+    && apk add --no-cache --virtual \
+    .build-deps \
+    curl \
+    binutils \
+    zstd \
+    gcompat \
+    jq \
+    zlib-dev \
+    libffi-dev \
+    openssl-dev  \
+    aws-cli \
+    bash \
+    tzdata \
+    git \
+    zip \
+    unzip \
+    docker \
+    gnupg \
+    openssh \
+    openssh-client \
+    docker-credential-ecr-login \
+    busybox-extras \
+    && ln -s /usr/share/zoneinfo/${TZ} /etc/localtime
+
+RUN apk add --update python3 \
+    py3-pip \
+    py3-setuptools \
+    && pip install  --break-system-packages --upgrade \
+        setuptools \
+        property
+
+RUN apk add nodejs npm \
+    && npm install --global yarn \
+    && node -v \
+    && npm -v \
+    && yarn --version
+
+RUN curl -LO -s  https://storage.googleapis.com/kubernetes-release/release/$(curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt)/bin/linux/amd64/kubectl \
+    && chmod +x ./kubectl \
+    && mv ./kubectl /usr/local/bin \
+    && mkdir -p ~/.kube \
+    && aws configure set region ${AWS_DEFAULT_REGION} --profile default \
+    && aws configure set aws_access_key_id ${AWS_ACCESS_KEY_ID} \
+    && aws configure set aws_secret_access_key  ${AWS_SECRET_ACCESS_KEY} \
+    && mkdir -p  /root/.docker \
+    && aws ecr get-login-password --region ${AWS_DEFAULT_REGION}  | docker login ${ECR_URL} --username AWS --password-stdin
+
+COPY --from=k6official /usr/bin/k6 /usr/bin/k6
+
+
